@@ -1,0 +1,187 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #1e1e24;
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+#main-layout {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 40px;
+    max-width: 900px;
+    width: 100%;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+#sidebar {
+    background-color: #222831;
+    border-left: 4px solid #00adb5;
+    padding: 20px;
+    border-radius: 4px;
+    max-width: 450px;
+    width: 100%;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+#sidebar h3 {
+    margin-top: 0;
+    color: #00adb5;
+    font-size: 1.4rem;
+}
+
+.science-section {
+    margin-top: 5px;
+    padding: 3px 7px 7px 7px;
+}
+
+.science-section h4 {
+    margin: 5px 0;
+    color: #eeeeee;
+}
+
+.science-section p {
+    font-size: 0.9rem;
+    color: #ccc;
+    line-height: 1.4;
+    margin: 0;
+}
+
+.active-science {
+    background: #393e46;
+    border-radius: 5px;
+}
+
+#game-container {
+    text-align: center;
+}
+
+#status-line {
+    margin-bottom: 20px;
+    font-size: 1.2rem;
+    color: #00adb5;
+}
+
+#board {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(80px, 120px));
+    grid-template-rows: repeat(3, minmax(80px, 120px));
+    gap: 8px;
+    background-color: #393e46;
+    padding: 8px;
+    border-radius: 8px;
+    margin: 0 auto;
+}
+
+.cell {
+    background-color: #222831;
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.cell:hover {
+    background-color: #2b323c;
+}
+
+.cell.selected {
+    outline: 3px solid #eeeeee;
+    background-color: #2b323c;
+}
+
+.quantum-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    height: 100%;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    gap: 4px;
+}
+
+.q-mark {
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 2px;
+}
+
+.classical {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    font-size: 3.5rem;
+    font-weight: bold;
+}
+
+.cell.collapsed .quantum-grid {
+    display: none;
+}
+
+.cell.collapsed .classical {
+    display: flex;
+}
+
+.X {
+    color: #00adb5 !important;
+}
+
+.O {
+    color: #ff5722 !important;
+}
+
+.q-mark.X {
+    color: rgba(0, 173, 181, 0.7) !important;
+}
+
+.q-mark.O {
+    color: rgba(255, 87, 34, 0.7) !important;
+}
+
+#reset-btn {
+    margin-top: 20px;
+    padding: 10px 20px;
+    background-color: #00adb5;
+    border: none;
+    color: white;
+    font-size: 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#reset-btn:hover {
+    background-color: #008c95;
+}
+
+@media (max-width: 800px) {
+    body {
+        height: auto;
+        padding: 20px 0;
+    }
+
+    #main-layout {
+        flex-direction: column-reverse;
+        align-items: center;
+        gap: 30px;
+    }
+
+    #sidebar {
+        max-width: 384px;
+        border-left: none;
+        border-top: 4px solid #00adb5;
+    }
+}
