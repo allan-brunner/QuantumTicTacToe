@@ -1,21 +1,23 @@
+const WINNING_COMBOS = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],    // Rows
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],    // Columns
+    [0, 4, 8], [2, 4, 6]                // Diagonals
+];
+
 // Data representation
 const gameState = {
-    currentMoveNb: 3,
+    currentMoveNb: 1,
     currentPlayer: 'X',
 
-    selectedCells: [5],
+    selectedCells: [],
 
-    boardState: [
-        { collapsed: null, quantumMoves: ['X1', 'O2'] },
-        { collapsed: 'X', quantumMoves: [] },
-        { collapsed: 'O', quantumMoves: [] },
-        { collapsed: null, quantumMoves: ['O2'] },
-        { collapsed: null, quantumMoves: [] },
-        { collapsed: null, quantumMoves: [] },
-        { collapsed: null, quantumMoves: ['X1'] },
-        { collapsed: null, quantumMoves: [] },
-        { collapsed: null, quantumMoves: [] }
-    ],
+    boardState: Array(9).fill(null).map(() => ({
+        collapsed: null,
+        quantumMoves: [],
+        originMoveNumber: null
+    })),
+
+    winningLine: null,
 
     isCollapsePhase: false,
     hasEntanglements: false,
@@ -38,8 +40,12 @@ function renderBoard() {
         const quantumEl = cellEl.querySelector('.quantum-grid');
 
         // Reset classes from previous renders
-        cellEl.classList.remove('collapsed', 'selected', 'in-cycle');
+        cellEl.classList.remove('collapsed', 'selected', 'in-cycle', 'winner-cell');
         classicalEl.classList.remove('X', 'O');
+
+        if (gameState.winningLine && gameState.winningLine.includes(index)) {
+            cellEl.classList.add('winner-cell');
+        }
 
         if (gameState.isCollapsePhase && gameState.activeCycle) {
             const isCellInCycle = gameState.activeCycle.some(step => step.node === index);
@@ -102,6 +108,8 @@ function advancePlayerTurn() {
 }
 
 function handleCellClick(index, cellEl) {
+    if (gameState.isGameOver) return;
+
     if (gameState.isCollapsePhase) {
         const isCellInCycle = gameState.activeCycle.some(step => step.node === index);
         if (!isCellInCycle) return;
@@ -135,6 +143,13 @@ function handleCellClick(index, cellEl) {
 
         // Push the move into both cells
         gameState.selectedCells.forEach(cell => gameState.boardState[cell].quantumMoves.push(moveLabel));
+        for (cell in gameState.selectedCells) {
+            if (gameState.boardState[cell].quantumMoves.length > 1) {
+                gameState.hasEntanglements = true;
+                updateSidebarHighlights();
+                break;
+            }
+        }
 
         // Cleanup selection
         gameState.selectedCells = [];
@@ -280,6 +295,11 @@ function resolveCollapse(startingCellIndex) {
         gameState.boardState[idx].collapsed = resolutions[idx];
         // Evaporate the quantum state
         gameState.boardState[idx].quantumMoves = [];
+
+        const resolvingMove = gameState.activeCycle.find(step => step.node === idx)?.move;
+        if (resolvingMove) {
+            gameState.boardState[idx].originMoveNumber = parseInt(resolvingMove.slice(1), 10);
+        }
     });
 
     gameState.boardState.forEach(cell => {
@@ -290,18 +310,167 @@ function resolveCollapse(startingCellIndex) {
 
     gameState.isCollapsePhase = false;
     gameState.activeCycle = null;
+    gameState.hasEntanglements = gameState.boardState.some(cell => cell.quantumMoves.length > 1);
+    updateSidebarHighlights();
 
-    advancePlayerTurn();
+    checkWinCondition();
+
+    if (!gameState.isGameOver) {
+        advancePlayerTurn();
+
+        checkAndResolveLastCell();
+    }
     renderBoard();
 }
 
+function checkWinCondition() {
+    let xWins = [];
+    let oWins = [];
+
+    // Scan the board for any classical 3-in-a-rows
+    WINNING_COMBOS.forEach(combo => {
+        const [a, b, c] = combo;
+        const cellA = gameState.boardState[a].collapsed;
+        const cellB = gameState.boardState[b].collapsed;
+        const cellC = gameState.boardState[c].collapsed;
+
+        if (cellA && cellA === cellB && cellA === cellC) {
+            const maxSubscript = calculateLineAge(combo, cellA);
+
+            const winObject = { combo, maxSubscript };
+            if (cellA === 'X') xWins.push(winObject);
+            if (cellA === 'O') oWins.push(winObject);
+        }
+    });
+
+    // Evaluate the results
+    if (xWins.length > 0 && oWins.length > 0) {
+        // Simultaneous win: find the lowest max-subscript between both players
+        const minX = Math.min(...xWins.map(w => w.maxSubscript));
+        const minO = Math.min(...oWins.map(w => w.maxSubscript));
+
+        if (minX < minO) {
+            const winningObject = xWins.find(w => w.maxSubscript === minX);
+            gameState.winningLine = winningObject.combo;
+            return declareWinner('X', minX, minO);
+        }
+        if (minO < minX) {
+            const winningObject = oWins.find(w => w.maxSubscript === minO);
+            gameState.winningLine = winningObject.combo;
+            return declareWinner('O', minX, minO);
+        }
+
+        gameState.winningLine = [...xWins[0].combo, ...oWins[0].combo];
+        return declareWinner('Tie', minX, minO);
+    }
+
+    if (xWins.length > 0) {
+        gameState.winningLine = xWins[0].combo;
+        return declareWinner('X');
+    }
+    if (oWins.length > 0) {
+        gameState.winningLine = oWins[0].combo;
+        return declareWinner('O');
+    }
+
+    const isBoardFull = gameState.boardState.every(cell => cell.collapsed !== null);
+    if (isBoardFull) return declareWinner('Tie');
+
+    return null;
+}
+
+// Helper to determine the highest move subscript that contributed to a classical cell
+function calculateLineAge(combo) {
+    const [a, b, c] = combo;
+    const ageA = gameState.boardState[a].originMoveNumber || 0;
+    const ageB = gameState.boardState[b].originMoveNumber || 0;
+    const ageC = gameState.boardState[c].originMoveNumber || 0;
+
+    // The maximum subscript in this line dictates its completion time
+    return Math.max(ageA, ageB, ageC);
+}
+
+function declareWinner(winner, xAge = null, oAge = null) {
+    gameState.isGameOver = true;
+    const statusEl = document.getElementById('status-line');
+    const tiebreakerEl = document.getElementById('tiebreaker-line');
+
+    if (winner === 'Tie') {
+        statusEl.textContent = "✨ Quantum Decoherence! It's a Draw! ✨";
+        statusEl.style.color = "#eeeeee";
+
+        if (xAge && oAge) {
+            tiebreakerEl.textContent = `Both players completed lines simultaneously on Move ${xAge}. Perfect historical tie!`;
+        }
+    } else {
+        statusEl.textContent = `🎉 Player ${winner} Wins the Match! 🎉`;
+        statusEl.style.color = winner === 'X' ? '#00adb5' : '#ff5722';
+
+        if (xAge !== null && oAge !== null) {
+            tiebreakerEl.innerHTML = `
+        <strong>Simultaneous Win Tie-Breaker:</strong><br>
+        Player X's line was completed at move <strong>${xAge}</strong>.<br>
+        Player O's line was completed at move <strong>${oAge}</strong>.<br>
+        <em>Player ${winner} wins because their chain was locked into history earlier!</em>
+      `;
+        }
+    }
+}
+
+function checkAndResolveLastCell() {
+    // Count how many cells are still open
+    const openCells = [];
+    gameState.boardState.forEach((cell, idx) => {
+        if (!cell.collapsed) openCells.push(idx);
+    });
+
+    // If there is exactly 1 open cell left, it cannot support a 2-cell quantum move
+    if (openCells.length === 1) {
+        const lastCellIdx = openCells[0];
+        const lastCell = gameState.boardState[lastCellIdx];
+
+        if (lastCell.quantumMoves.length > 0) {
+            // Find the oldest move that was placed in this cell
+            let oldestMove = lastCell.quantumMoves[0];
+            let lowestSubscript = parseInt(oldestMove.slice(1), 10);
+
+            lastCell.quantumMoves.forEach(move => {
+                const sub = parseInt(move.slice(1), 10);
+                if (sub < lowestSubscript) {
+                    lowestSubscript = sub;
+                    oldestMove = move;
+                }
+            });
+
+            const finalPlayer = oldestMove[0];
+            lastCell.collapsed = finalPlayer;
+            lastCell.originMoveNumber = lowestSubscript;
+            lastCell.quantumMoves = [];
+
+            console.log(`Last cell automated: Cell ${lastCellIdx} collapsed to ${finalPlayer} via move ${oldestMove}`);
+        } else {
+            // If the last cell is completely empty, resolve the win to the current player
+            lastCell.collapsed = gameState.currentPlayer;
+            lastCell.originMoveNumber = gameState.currentMoveNb;
+        }
+
+        checkWinCondition();
+        renderBoard();
+    }
+}
+
 function resetBoard() {
-    gameState.boardState = Array(9).fill(null).map(() => ({ collapsed: null, quantumMoves: [] }));
+    gameState.boardState = Array(9).fill(null).map(() => ({ collapsed: null, quantumMoves: [], originMoveNumber: null }));
     gameState.currentPlayer = 'X';
     gameState.currentMoveNb = 1;
     gameState.selectedCells = [];
     gameState.hasEntanglements = false;
     gameState.isCollapsePhase = false;
+    gameState.activeCycle = null;
+    gameState.isGameOver = false;
+    gameState.winningLine = null;
+
+    document.getElementById('tiebreaker-line').textContent = "";
 
     updateStatusLine();
     renderBoard();

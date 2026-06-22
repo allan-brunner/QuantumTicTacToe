@@ -70,6 +70,14 @@ body {
     color: #00adb5;
 }
 
+#tiebreaker-line {
+    margin-top: -10px;
+    margin-bottom: 25px;
+    font-size: 0.95rem;
+    color: #aaa;
+    font-style: italic;
+}
+
 #board {
     display: grid;
     grid-template-columns: repeat(3, minmax(80px, 120px));
@@ -161,6 +169,12 @@ body {
 #board.collapsing-mode .cell.in-cycle {
     outline: 3px dashed #bd93f9;
     background-color: #282a36;
+}
+
+.cell.winner-cell {
+    outline: 4px solid #4caf50 !important;
+    background-color: #1b3820 !important;
+    z-index: 10;
 }
 
 #reset-btn {
