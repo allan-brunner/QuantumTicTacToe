@@ -152,6 +152,17 @@ body {
     color: rgba(255, 87, 34, 0.7) !important;
 }
 
+#board.collapsing-mode .cell:not(.in-cycle) {
+    opacity: 0.25;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+#board.collapsing-mode .cell.in-cycle {
+    outline: 3px dashed #bd93f9;
+    background-color: #282a36;
+}
+
 #reset-btn {
     margin-top: 20px;
     padding: 10px 20px;
