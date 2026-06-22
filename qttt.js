@@ -9,6 +9,8 @@ const gameState = {
     currentMoveNb: 1,
     currentPlayer: 'X',
 
+    gameMode: 'multiplayer',
+
     selectedCells: [],
 
     boardState: Array(9).fill(null).map(() => ({
@@ -110,6 +112,8 @@ function advancePlayerTurn() {
 function handleCellClick(index, cellEl) {
     if (gameState.isGameOver) return;
 
+    if (gameState.isOPlayerABot && gameState.currentPlayer === 'O') return;
+
     if (gameState.isCollapsePhase) {
         const isCellInCycle = gameState.activeCycle.some(step => step.node === index);
         if (!isCellInCycle) return;
@@ -173,7 +177,14 @@ function handleCellClick(index, cellEl) {
         }
 
         advancePlayerTurn();
+        checkAndResolveLastCell();
         renderBoard();
+
+        if (!gameState.isGameOver && gameState.gameMode === 'bot' && gameState.currentPlayer === 'O' && !gameState.isCollapsePhase) {
+            setTimeout(() => {
+                makeBotMove();
+            }, 500);
+        }
     }
 
     updateStatusLine();
@@ -319,6 +330,12 @@ function resolveCollapse(startingCellIndex) {
         advancePlayerTurn();
 
         checkAndResolveLastCell();
+
+        if (gameState.gameMode === 'bot' && gameState.currentPlayer === 'O' && !gameState.isGameOver) {
+            setTimeout(() => {
+                makeBotMove();
+            }, 500);
+        }
     }
     renderBoard();
 }
@@ -459,6 +476,93 @@ function checkAndResolveLastCell() {
     }
 }
 
+function makeBotMove() {
+    if (gameState.isGameOver || gameState.isCollapsePhase) return;
+
+    const validCells = [];
+    gameState.boardState.forEach((cell, idx) => {
+        if (!cell.collapsed) validCells.push(idx);
+    });
+
+    if (validCells.length < 2) return;
+
+    let bestPair = null;
+    let highestScore = -Infinity;
+
+    // Evaluate every possible pair of available cells
+    for (let i = 0; i < validCells.length; i++) {
+        for (let j = i + 1; j < validCells.length; j++) {
+            const cell1 = validCells[i];
+            const cell2 = validCells[j];
+
+            let score = scoreQuantumPair(cell1, cell2);
+
+            // Add a tiny bit of randomness so the bot doesn't play identically every game
+            score += Math.random() * 0.35;
+
+            if (score > highestScore) {
+                highestScore = score;
+                bestPair = [cell1, cell2];
+            }
+        }
+    }
+
+    if (bestPair) {
+        const moveLabel = `${gameState.currentPlayer}${gameState.currentMoveNb}`;
+
+        bestPair.forEach(cell => gameState.boardState[cell].quantumMoves.push(moveLabel));
+        advancePlayerTurn();
+
+        // Check if the bot's move closed a loop
+        const detectedCycle = findCycle();
+        if (detectedCycle) {
+            gameState.isCollapsePhase = true;
+            gameState.activeCycle = detectedCycle;
+
+            // Since the bot caused the loop, the human player gets to choose how to collapse it!
+            document.getElementById('status-line').textContent =
+                `The bot formed a loop! Click an entangled cell to collapse reality.`;
+
+            renderBoard();
+            return;
+        }
+
+        checkAndResolveLastCell();
+        renderBoard();
+    }
+}
+
+function scoreQuantumPair(c1, c2) {
+    let score = 0;
+
+    // Heuristic: Bias toward the center (Cell 4) and corners (0, 2, 6, 8)
+    const strategicCells = [4, 0, 2, 6, 8];
+    if (strategicCells.includes(c1)) score += 1;
+    if (strategicCells.includes(c2)) score += 1;
+
+    // Heuristic: Check classic lines for block/win opportunities
+    WINNING_COMBOS.forEach(combo => {
+        const values = combo.map(idx => {
+            if (idx === c1 || idx === c2) return 'potential';
+            return gameState.boardState[idx].collapsed;
+        });
+
+        const oCount = values.filter(v => v === 'O').length;
+        const xCount = values.filter(v => v === 'X').length;
+        const potentialCount = values.filter(v => v === 'potential').length;
+
+        if (gameState.currentPlayer === 'O') {
+            if (xCount === 2 && potentialCount === 1) score += 100; // Block Player X from winning
+            if (oCount === 2 && potentialCount === 1) score += 50;  // Push for own victory line
+        } else {
+            if (oCount === 2 && potentialCount === 1) score += 100; // Block Player O from winning
+            if (xCount === 2 && potentialCount === 1) score += 50;  // Push for own victory line
+        }
+    });
+
+    return score;
+}
+
 function resetBoard() {
     gameState.boardState = Array(9).fill(null).map(() => ({ collapsed: null, quantumMoves: [], originMoveNumber: null }));
     gameState.currentPlayer = 'X';
@@ -484,6 +588,24 @@ document.getElementById('board').addEventListener('click', (event) => {
 
     const cellIndex = parseInt(cellEl.dataset.index, 10);
     handleCellClick(cellIndex, cellEl);
+});
+
+document.getElementById('mode-btn').addEventListener('click', (event) => {
+    const btn = event.target;
+
+    if (gameState.gameMode === 'multiplayer') {
+        gameState.gameMode = 'bot';
+        btn.textContent = "Mode: Vs Bot (AI)";
+        btn.classList.remove('multiplayer');
+        btn.classList.add('vs-bot');
+    } else {
+        gameState.gameMode = 'multiplayer';
+        btn.textContent = "Mode: 2 Players";
+        btn.classList.remove('vs-bot');
+        btn.classList.add('multiplayer');
+    }
+
+    document.getElementById('reset-btn').click();
 });
 
 updateStatusLine();
