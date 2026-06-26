@@ -109,16 +109,27 @@ function advancePlayerTurn() {
     updateStatusLine();
 }
 
-function handleCellClick(index, cellEl) {
+function handleCellClick(index, cellEl, clickedMove = null) {
     if (gameState.isGameOver) return;
 
-    if (gameState.isOPlayerABot && gameState.currentPlayer === 'O') return;
+    if (gameState.gameMode === 'bot' && gameState.currentPlayer === 'O') return;
 
     if (gameState.isCollapsePhase) {
         const isCellInCycle = gameState.activeCycle.some(step => step.node === index);
         if (!isCellInCycle) return;
 
-        resolveCollapse(index);
+        // Extract only the moves that make up the loop
+        const cycleMoves = gameState.activeCycle.map(step => step.move).filter(Boolean);
+
+        // Ensure the clicked quantum mark is part of the loop
+        if (clickedMove && !cycleMoves.includes(clickedMove)) return;
+
+        // Find all valid moves currently existing inside this specific cell
+        const validLoopMovesInCell = gameState.boardState[index].quantumMoves.filter(m => cycleMoves.includes(m));
+
+        // Default to a valid move if no specific mark was clicked
+        const moveToKeep = clickedMove || validLoopMovesInCell[0];
+        resolveCollapse(index, moveToKeep);
         return;
     }
 
@@ -259,70 +270,43 @@ function findCycle() {
     return null;
 }
 
-function resolveCollapse(startingCellIndex) {
-    const cycleEdges = gameState.activeCycle;
-    const resolutions = {};
+function resolveCollapse(startingCellIndex, chosenMoveLabel) {
+    // Seed the queue with player choice
+    const queue = [{ cellIdx: startingCellIndex, moveLabel: chosenMoveLabel }];
+    const resolvedCells = new Set();
 
-    // Find where the player's clicked cell sits in the cycle array
-    let startIndex = cycleEdges.findIndex(step => step.node === startingCellIndex);
+    // Ripple the collapse outwards (BFS)
+    while (queue.length > 0) {
+        const { cellIdx, moveLabel } = queue.shift();
 
-    // Look at the move that connects this cell to the next step in the loop
-    let targetStepIndex = startIndex === cycleEdges.length - 1 ? 1 : startIndex + 1;
-    let chosenMove = cycleEdges[targetStepIndex].move;
+        // Already collapsed this link
+        if (resolvedCells.has(cellIdx)) continue;
 
-    // Step through the loop sequentially to collapse every single node deterministically
-    let currentCell = startingCellIndex;
-    let currentMove = chosenMove;
+        const cell = gameState.boardState[cellIdx];
 
-    while (currentMove !== null) {
-        // Lock this cell into a classical mark based on the active move
-        const playerChar = currentMove[0];
-        resolutions[currentCell] = playerChar;
+        cell.collapsed = moveLabel[0];
+        cell.originMoveNumber = parseInt(moveLabel.slice(1), 10);
+        resolvedCells.add(cellIdx);
 
-        // Find the step in our cycle array that represents the other side of this move
-        const currentStepIdx = cycleEdges.findIndex(step => step.move === currentMove && step.node !== currentCell);
+        // Any other quantum moves inside the cell are now rejected.
+        // Therefore, they must collapse into their alternate companion cells.
+        const rejectedMoves = cell.quantumMoves.filter(m => m !== moveLabel);
 
-        if (currentStepIdx !== -1) {
-            const nextCell = cycleEdges[currentStepIdx].node;
+        rejectedMoves.forEach(rejectedMove => {
+            // Find the other cell holding this ghost half
+            const otherCellIdx = gameState.boardState.findIndex((c, idx) =>
+                idx !== cellIdx && c.quantumMoves.includes(rejectedMove)
+            );
 
-            // Move to the next link in the cycle array chain
-            let nextStepIdx = currentStepIdx === cycleEdges.length - 1 ? 1 : currentStepIdx + 1;
-            let nextMove = cycleEdges[nextStepIdx].move;
-
-            // If looped back to a cell already resolved, the entire chain is finished!
-            if (resolutions.hasOwnProperty(nextCell)) {
-                // Resolve the final link before breaking
-                resolutions[nextCell] = nextMove[0];
-                currentMove = null;
-            } else {
-                currentCell = nextCell;
-                currentMove = nextMove;
+            // Queue that cell to collapse into the rejected move
+            if (otherCellIdx !== -1 && !resolvedCells.has(otherCellIdx)) {
+                queue.push({ cellIdx: otherCellIdx, moveLabel: rejectedMove });
             }
-        } else {
-            currentMove = null;
-        }
+        });
+
+        // Evaporate the quantum state UI entirely for this cell
+        cell.quantumMoves = [];
     }
-
-    // Apply the calculated classical resolution to the real board state
-    Object.keys(resolutions).forEach(cellIdx => {
-        const idx = parseInt(cellIdx, 10);
-        gameState.boardState[idx].collapsed = resolutions[idx];
-        // Evaporate the quantum state
-        gameState.boardState[idx].quantumMoves = [];
-
-        const resolvingMove = gameState.activeCycle.find(step => step.node === idx)?.move;
-        if (resolvingMove) {
-            gameState.boardState[idx].originMoveNumber = parseInt(resolvingMove.slice(1), 10);
-        }
-    });
-
-    // Clean up the rest of the board
-    const usedMoves = cycleEdges.map(e => e.move).filter(Boolean);
-    gameState.boardState.forEach(cell => {
-        if (!cell.collapsed) {
-            cell.quantumMoves = cell.quantumMoves.filter(move => !usedMoves.includes(move));
-        }
-    })
 
     // Reset UI phase flags
     gameState.isCollapsePhase = false;
@@ -595,7 +579,15 @@ document.getElementById('board').addEventListener('click', (event) => {
     if (!cellEl) return; // Clicked outside a cell
 
     const cellIndex = parseInt(cellEl.dataset.index, 10);
-    handleCellClick(cellIndex, cellEl);
+
+    // Check if a specifc quantum mark has been clicked
+    let clickedMove = null;
+    const markEl = event.target.closest('.q-mark');
+    if (markEl) {
+        clickedMove = markEl.textContent;
+    }
+
+    handleCellClick(cellIndex, cellEl, clickedMove);
 });
 
 document.getElementById('mode-btn').addEventListener('click', (event) => {
